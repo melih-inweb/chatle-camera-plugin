@@ -1,7 +1,5 @@
 package com.retrytech.retrytech_plugin
 
-import android.content.Intent
-import android.os.Build
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.SessionState
@@ -10,7 +8,6 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
-import kotlin.coroutines.jvm.internal.CompletedContinuation.context
 
 /** RetrytechPlugin */
 class RetrytechPlugin : FlutterPlugin, MethodCallHandler {
@@ -38,39 +35,12 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler {
                     result.success(it.state == SessionState.COMPLETED)
                 }
             }
-            "shareToInstagram" ->{
-                Log.d("TAG","Share To instagram")
-                val text = call.arguments as String?
-                if (text != null) {
-                    shareTextToInstagram(text)
-                }
-                result.success(null)
-            }
 
             else -> {
                 result.notImplemented()
             }
         }
-
     }
-
-    private fun shareTextToInstagram(text: String) {
-        val shareIntent = Intent(Intent.ACTION_SEND)
-        shareIntent.type = "text/plain"
-        shareIntent.putExtra(Intent.EXTRA_TEXT, text)
-        val pm = channel!!.packageManager
-        pm.queryIntentActivities(shareIntent, 0)
-        shareIntent.setPackage("com.instagram.android")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
-        } else {
-            shareIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET)
-        }
-        channel!!.startActivity(shareIntent)
-    }
-
-
-
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
