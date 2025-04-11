@@ -8,4 +8,9 @@ class RetrytechPlugin {
   Future<bool?> runTheCommand(String command) {
     return methodChannel.invokeMethod("runFFmpegCommand", command);
   }
+
+  void shareToInstagram(String text) async {
+    await methodChannel.invokeMethod('shareToInstagram', text);
+  }
+
 }
