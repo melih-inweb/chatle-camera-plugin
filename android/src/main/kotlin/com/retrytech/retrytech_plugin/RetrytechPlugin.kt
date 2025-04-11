@@ -1,6 +1,5 @@
 package com.retrytech.retrytech_plugin
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.util.Log
@@ -10,9 +9,8 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
-import androidx.core.content.ContextCompat
-
-
+import io.flutter.plugin.common.MethodChannel.Result
+import kotlin.coroutines.jvm.internal.CompletedContinuation.context
 
 /** RetrytechPlugin */
 class RetrytechPlugin : FlutterPlugin, MethodCallHandler {
@@ -21,8 +19,6 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler {
     /// This local reference serves to register the plugin with the Flutter Engine and unregister it
     /// when the Flutter Engine is detached from the Activity
     private lateinit var channel: MethodChannel
-    var context: Activity? = null
-
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(
@@ -62,7 +58,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler {
         val shareIntent = Intent(Intent.ACTION_SEND)
         shareIntent.type = "text/plain"
         shareIntent.putExtra(Intent.EXTRA_TEXT, text)
-        val pm = context!!.packageManager
+        val pm = channel!!.packageManager
         pm.queryIntentActivities(shareIntent, 0)
         shareIntent.setPackage("com.instagram.android")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -70,7 +66,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler {
         } else {
             shareIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET)
         }
-        context!!.startActivity(shareIntent)
+        channel!!.startActivity(shareIntent)
     }
 
 
