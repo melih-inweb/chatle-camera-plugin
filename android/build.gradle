@@ -50,7 +50,8 @@ android {
     dependencies {
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")
-        implementation 'com.arthenica:ffmpeg-kit-full:6.0'
+        implementation 'androidx.media3:media3-transformer:1.6.1'
+        implementation 'androidx.media3:media3-common:1.6.1'
     }
     packagingOptions {
         pickFirst 'lib/x86/libc++_shared.so'
