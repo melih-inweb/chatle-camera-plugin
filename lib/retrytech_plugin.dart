@@ -14,7 +14,7 @@ class RetrytechPlugin {
   Future<bool?> applyFilterAndAudioToVideo({
     required String inputPath,
     required String outputPath,
-    required bool shouldBothMusics,
+    bool shouldBothMusics = false,
     String? audioPath,
     List<double> filterValues = const [],
     double? audioStartTimeInMS,
