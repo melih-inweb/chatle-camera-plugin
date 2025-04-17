@@ -11,37 +11,45 @@ class RetrytechPlugin {
     return methodChannel.invokeMethod("shareToInstagram", command);
   }
 
-  Future<bool?> mergeAudioAndVideo(
-      {required String inputPath, required String audioPath, required String outputPath}) {
-    return methodChannel.invokeMethod("mergeAudioAndVideo", {
+  Future<bool?> applyFilterAndAudioToVideo({
+    required String inputPath,
+    required String outputPath,
+    required bool shouldBothMusics,
+    String? audioPath,
+    List<double> filterValues = const [],
+    double? audioStartTimeInMS,
+  }) {
+    return methodChannel.invokeMethod("applyFilterAndAudioToVideo", {
       'input_path': inputPath,
       'audio_path': audioPath,
-      'output_path': outputPath
+      'filter_values': filterValues,
+      'output_path': outputPath,
+      'should_add_both_musics': shouldBothMusics,
+      'audio_start_time_in_ms': audioStartTimeInMS,
     });
   }
 
-  Future<bool?> extractAudio(
-      {required String inputPath, required String outputPath}) {
+  Future<bool?> extractAudio({
+    required String inputPath,
+    required String outputPath,
+  }) {
     return methodChannel.invokeMethod("extractAudio", {
       'input_path': inputPath,
-      'output_path': outputPath
+      'output_path': outputPath,
     });
   }
 
-  Future<bool?> addWaterMarkInVideo(
-      {required String inputPath, required String thumbnailPath, required String username, required String outputPath}) {
+  Future<bool?> addWaterMarkInVideo({
+    required String inputPath,
+    required String thumbnailPath,
+    required String username,
+    required String outputPath,
+  }) {
     return methodChannel.invokeMethod("addWaterMarkInVideo", {
       'input_path': inputPath,
       'thumbnail_path': thumbnailPath,
       'username': username,
-      'output_path': outputPath
+      'output_path': outputPath,
     });
   }
-
 }
-
-
-
-
-
-

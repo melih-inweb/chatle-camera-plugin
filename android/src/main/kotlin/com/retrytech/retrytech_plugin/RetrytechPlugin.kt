@@ -12,6 +12,7 @@ import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.core.net.toUri
+import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
@@ -25,6 +26,7 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.retrytech.retrytech_plugin.filter.RgbFilter
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -51,6 +53,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         channel.setMethodCallHandler(this)
     }
 
+    @UnstableApi
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
 
@@ -58,10 +61,14 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 Log.d("TAG", "onMethodCall: ${call.arguments}")
                 shareToInstagram(call.arguments.toString(), result)
             }
-
-            "mergeAudioAndVideo" -> {
+//
+//            "mergeAudioAndVideo" -> {
+//                Log.d("TAG", "onMethodCall: ${call.arguments}")
+//                mergeAudio(call.arguments as Map<String, String>, result)
+//            }
+            "applyFilterAndAudioToVideo" -> {
                 Log.d("TAG", "onMethodCall: ${call.arguments}")
-                mergeAudio(call.arguments as Map<String, String>, result)
+                applyFilterAndAudioToVideo(call.arguments as Map<String, String>, result)
             }
 
             "addWaterMarkInVideo" -> {
@@ -73,6 +80,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 Log.d("TAG", "onMethodCall: ${call.arguments}")
                 extractAudio(call.arguments as Map<String, String>, result)
             }
+
 
             else -> {
                 result.notImplemented()
@@ -118,7 +126,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
-    @OptIn(UnstableApi::class)
+    @UnstableApi
     fun addWatermarkToVideo(arguments: Map<String, String>, result: Result) {
         try {
             val inputPath = arguments["input_path"]
@@ -235,7 +243,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
-    @OptIn(UnstableApi::class)
+    @UnstableApi
     private fun extractAudio(arguments: Map<String, String>, result: Result) {
         val videoUri = arguments["input_path"]?.toUri()
         val outputUri = arguments["output_path"]?.toUri()
@@ -294,38 +302,56 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             e.printStackTrace()
             result.success(false)
         }
-
     }
 
 
-    @OptIn(UnstableApi::class)
-    private fun mergeAudio(arguments: Map<String, String>, result: Result) {
-        val videoUri = arguments["input_path"]?.toUri()
-        val audioUri = arguments["audio_path"]?.toUri()
-        val outputUri = arguments["output_path"]?.toUri()
+    @UnstableApi
+    private fun applyFilterAndAudioToVideo(arguments: Map<String, Any>, result: Result) {
+        val videoUri = arguments["input_path"]?.toString()?.toUri()
+        val audioUri = arguments["audio_path"]?.toString()?.toUri()
+        val outputUri = arguments["output_path"]?.toString()?.toUri()
+        val filterValues = arguments["filter_values"] as ArrayList<Float>?
+        val shouldAddBothMusics = arguments["should_add_both_musics"] as Boolean
+        val audioStartTimeInMs = arguments["audio_start_time_in_ms"] as Double?
 
-        val videoItem =
-            EditedMediaItem.Builder(MediaItem.fromUri(videoUri!!))
-                .setRemoveAudio(true)
-                .build()
-        val videoDurationUs = getVideoDurationUs(videoUri)
-        val clippedAudioMediaItem = MediaItem.Builder()
-            .setUri(audioUri)
-            .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder()
-                    .setEndPositionMs(videoDurationUs)
-                    .build()
-            )
-            .build()
-        val audioItem = EditedMediaItem.Builder(clippedAudioMediaItem)
-            .build()
+
+        val videoItemBuilder = EditedMediaItem.Builder(MediaItem.fromUri(videoUri!!))
+            .setRemoveAudio(!shouldAddBothMusics);
+
+        if (filterValues != null && filterValues.isNotEmpty()) {
+            val videoEffects = mutableListOf<Effect>()
+
+            val rgbFilter = RgbFilter(filterValues.toFloatArray())
+            videoEffects.add(rgbFilter)
+            videoItemBuilder.setEffects(Effects(listOf(), videoEffects))
+        }
+        val videoItem = videoItemBuilder.build()
+
+        val mediaItemSequences: ArrayList<EditedMediaItemSequence> = ArrayList()
         val videoSequence = EditedMediaItemSequence.Builder(listOf(videoItem))
             .build()
+        mediaItemSequences.add(videoSequence)
 
-        val audioSequence = EditedMediaItemSequence.Builder(listOf(audioItem))
-            .build()
+        if (audioUri != null) {
+            val videoDurationUs = getVideoDurationUs(videoUri)
+            val clippedAudioMediaItem = MediaItem.Builder()
+                .setUri(audioUri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(audioStartTimeInMs?.toLong() ?: 0L)
+                        .setEndPositionMs((audioStartTimeInMs?.toLong() ?: 0L) + videoDurationUs)
+                        .build()
+                )
+                .build()
+            val audioItem = EditedMediaItem.Builder(clippedAudioMediaItem)
+                .build()
+            val audioSequence = EditedMediaItemSequence.Builder(listOf(audioItem))
+                .build()
+            mediaItemSequences.add(audioSequence)
+        }
 
-        val composition = Composition.Builder(listOf(videoSequence, audioSequence)).build()
+
+        val composition = Composition.Builder(mediaItemSequences).build()
 
         val transformer = Transformer.Builder(context!!)
             .setMuxerFactory(DefaultMuxer.Factory())
@@ -336,6 +362,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     exportException: ExportException
                 ) {
                     result.success(false)
+                    Log.d("TAG", "onMethodCall: " + exportException.message)
                     super.onError(composition, exportResult, exportException)
                 }
 
@@ -352,7 +379,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     }
 
-    @OptIn(UnstableApi::class)
+    @UnstableApi
     private fun getVideoDurationUs(videoUri: Uri): Long {
         val retriever = MediaMetadataRetriever()
         retriever.setDataSource(context, videoUri)
@@ -363,4 +390,6 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         Log.d("Dhruv", "Video duration: $durationMs ms")
         return durationMs
     }
+
+
 }
