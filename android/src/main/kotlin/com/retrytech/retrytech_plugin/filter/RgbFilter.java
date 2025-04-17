@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package android.src.main.kotlin.com.retrytech.retrytech_plugin.filter;
+package com.retrytech.retrytech_plugin.filter;
 
 import static androidx.media3.common.util.Assertions.checkState;
 
