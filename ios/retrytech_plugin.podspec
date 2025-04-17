@@ -15,6 +15,7 @@ A new Flutter plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
+  s.dependency 'CameraManager', '~> 5.1'
   s.platform = :ios, '15.0'
   s.ios.deployment_target = '15.0'
 
