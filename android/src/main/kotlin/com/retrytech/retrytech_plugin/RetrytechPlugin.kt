@@ -10,7 +10,6 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
-import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
@@ -369,7 +368,7 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     super.onCompleted(composition, exportResult)
                     result.success(true)
-                    Toast.makeText(context, "Complete", Toast.LENGTH_SHORT).show()
+//                    Toast.makeText(context, "Complete", Toast.LENGTH_SHORT).show()
                 }
             })
             .build()
