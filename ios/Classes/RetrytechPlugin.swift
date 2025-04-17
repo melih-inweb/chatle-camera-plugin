@@ -7,6 +7,10 @@ public class RetrytechPlugin: NSObject, FlutterPlugin {
         let channel = FlutterMethodChannel(name: "retrytech_plugin", binaryMessenger: registrar.messenger())
         let instance = RetrytechPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
+
+        // Register the camera view
+        let cameraFactory = CameraViewFactory(messenger: registrar.messenger(), channel: channel)
+        registrar.register(cameraFactory, withId: "retrytech_camera_view")
     }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -64,7 +68,8 @@ public class RetrytechPlugin: NSObject, FlutterPlugin {
         case "getPlatformVersion":
             result("iOS " + UIDevice.current.systemVersion)
         default:
-            result(FlutterMethodNotImplemented)
+        print("No");
+//            result(FlutterMethodNotImplemented)
         }
     }
 }
