@@ -65,7 +65,6 @@ class RetrytechPlugin {
   Future<bool?> createVideoFromImage({
     required String inputPath,
     required String outputPath,
-    required bool shouldBothMusics,
     String? audioPath,
     List<double> filterValues = const [],
     double? audioStartTimeInMS,
@@ -76,7 +75,6 @@ class RetrytechPlugin {
       'audio_path': audioPath,
       'filter_values': filterValues,
       'output_path': outputPath,
-      'should_add_both_musics': shouldBothMusics,
       'audio_start_time_in_ms': audioStartTimeInMS,
       'video_total_duration_in_sec': videoTotalDurationInSec,
     });
