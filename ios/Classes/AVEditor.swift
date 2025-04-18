@@ -14,7 +14,7 @@ class AVEditor {
     
     
     func applyFilterToImage(imagePath: String, outputURL: URL, filterValues: [Double], completion: @escaping (_ status: Bool) -> Void) {
-
+        try? FileManager.default.removeItem(at: outputURL)
         guard let image = UIImage(contentsOfFile: imagePath),
               let ciInputImage = CIImage(image: image) else {
             completion(false)
@@ -23,8 +23,18 @@ class AVEditor {
 
         if filterValues.isEmpty {
             print("There is no filter")
-            try? image.jpegData(compressionQuality: 1)?.write(to: outputURL)
-            completion(true)
+            guard let jpegData = image.jpegData(compressionQuality: 1) else {
+                completion(false)
+                return
+            }
+            do {
+                try jpegData.write(to: outputURL)
+                print("Image saved successfully with correct orientation")
+                completion(true)
+            } catch {
+                print("Error writing image: \(error.localizedDescription)")
+                completion(false)
+            }
             return
         }
 
@@ -377,6 +387,7 @@ extension AVEditor {
         videoTotalDurationInSec: Double,
         completion: @escaping (Bool) -> Void
     ) {
+        try? FileManager.default.removeItem(at: outputURL)
         let image = UIImage(contentsOfFile: imageURL.path)!
         let size = image.size
         let fps: Int32 = 30

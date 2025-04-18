@@ -2,7 +2,13 @@ package com.retrytech.retrytech_plugin
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Bitmap.createBitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -33,6 +39,8 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import java.io.File
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
 
@@ -78,6 +86,11 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "extractAudio" -> {
                 Log.d("TAG", "onMethodCall: ${call.arguments}")
                 extractAudio(call.arguments as Map<String, String>, result)
+            }
+
+            "applyFilterToImage" -> {
+                Log.d("TAG", "onMethodCall: ${call.arguments}")
+                applyFilterOnImage(call.arguments as Map<String, String>, result)
             }
 
 
@@ -303,6 +316,36 @@ class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
+    private fun applyFilterOnImage(arguments: Map<String, Any>, result: Result) {
+        val inputFilePath = arguments["input_path"]?.toString()
+        val outputFilePath = arguments["output_path"]?.toString()
+        val filterValues = arguments["filter_values"] as ArrayList<Float>?
+        val colorMatrix = ColorMatrix(
+            filterValues?.toFloatArray()
+        )
+        if (inputFilePath.isNullOrEmpty() || outputFilePath.isNullOrEmpty() || filterValues.isNullOrEmpty()) {
+            result.success(false)
+            return
+        }
+        val bitmap = BitmapFactory.decodeFile(inputFilePath)
+        val paint = Paint().apply {
+            colorFilter = ColorMatrixColorFilter(colorMatrix)
+        }
+        if (bitmap == null) {
+            result.success(false)
+            return
+        }
+        val output = bitmap.config?.let { createBitmap(bitmap.width, bitmap.height, it) }
+        val canvas = output?.let { Canvas(it) }
+        canvas?.drawBitmap(bitmap, 0f, 0f, paint)
+        val file = File(outputFilePath)
+        file.parentFile?.mkdirs()
+        val out = FileOutputStream(file)
+        output?.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        out.flush()
+        out.close()
+        result.success(true)
+    }
 
     @UnstableApi
     private fun applyFilterAndAudioToVideo(arguments: Map<String, Any>, result: Result) {
