@@ -69,7 +69,7 @@ class RetrytechPlugin {
     String? audioPath,
     List<double> filterValues = const [],
     double? audioStartTimeInMS,
-    double videoTotalDurationInSec,
+    double videoTotalDurationInSec = 5.0,
   }) {
     return methodChannel.invokeMethod("createVideoFromImage", {
       'input_path': inputPath,
