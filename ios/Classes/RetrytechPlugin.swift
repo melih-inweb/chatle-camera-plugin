@@ -8,7 +8,14 @@ public class RetrytechPlugin: NSObject, FlutterPlugin {
         let channel = FlutterMethodChannel(name: "retrytech_plugin", binaryMessenger: registrar.messenger())
         let instance = RetrytechPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
+
+        let cameraChannel = FlutterMethodChannel(name: "retrytech_camera", binaryMessenger: registrar.messenger())
+        registrar.addMethodCallDelegate(instance, channel: cameraChannel)
+
+        let cameraFactory = CameraViewFactory(messenger: registrar.messenger(), channel: cameraChannel)
+        registrar.register(cameraFactory, withId: "retrytech_camera_view")
     }
+
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         guard let args = call.arguments as? [String: Any] else {

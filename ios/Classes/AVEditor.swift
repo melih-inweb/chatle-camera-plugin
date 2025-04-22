@@ -267,6 +267,7 @@ extension AVEditor {
         try? FileManager.default.removeItem(at: outputURL)
 
         let mixComposition = AVMutableComposition()
+
         let videoAsset = AVAsset(url: inputVideoURL)
 
         Task {
@@ -278,12 +279,20 @@ extension AVEditor {
                     return
                 }
 
+
+//                mixComposition.naturalSize = CGSize(width: 1920, height: 1080)
+                let naturalSize = videoTrack.naturalSize.applying(videoTrack.preferredTransform).standardizedSize
+                mixComposition.naturalSize = naturalSize
+
                 let videoCompositionTrack = mixComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
                 try videoCompositionTrack?.insertTimeRange(CMTimeRange(start: .zero, duration: videoAsset.duration), of: videoTrack, at: .zero)
+
 
                 // Apply Filter
                 let composition = AVVideoComposition(asset: mixComposition) { request in
                     let source = request.sourceImage.clampedToExtent()
+
+
 
                     if !filterValues.isEmpty,
                        let filter = filterValues.toCIFilter() {
@@ -602,5 +611,10 @@ extension CIImage {
                else { return nil }
                return colorMatrix.outputImage
 
+    }
+}
+extension CGSize {
+    var standardizedSize: CGSize {
+        CGSize(width: abs(width), height: abs(height))
     }
 }
