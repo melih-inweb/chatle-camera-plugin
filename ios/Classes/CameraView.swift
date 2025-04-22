@@ -78,6 +78,7 @@ class CameraView: NSObject, FlutterPlatformView {
     }
 
     private func configureCameraManager() {
+        cameraManager.imageAlbumName = "RetryTech"
         cameraManager.writeFilesToPhoneLibrary = false
         cameraManager.showAccessPermissionPopupAutomatically = false
         cameraManager.shouldEnableTapToFocus = false
@@ -107,24 +108,29 @@ class CameraView: NSObject, FlutterPlatformView {
     }
 
     private func captureImage(result: FlutterResult? = nil){
+        cameraManager.cameraOutputMode = .stillImage
         cameraManager.capturePictureWithCompletion { resultImage in
             switch resultImage {
-            case .success(content: let content):
+            case .success(let content):
                 guard let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                    print("DIrectory not found")
+                    print("Directory not found")
                     return
                 }
-                let data = content.asData
-                let outputURL = documentDirectory.appendingPathComponent("captured.jpg")
-                try? FileManager.default.removeItem(at: outputURL) // Clean existing file if needed
-                do {
-                    try data?.write(to: outputURL)
-                    result?(outputURL.path)
-                } catch {
-                    print(error.localizedDescription)
+                if let data = content.asData {
+                    print("Captured")
+                    let outputURL = documentDirectory.appendingPathComponent("captured.jpg")
+                    try? FileManager.default.removeItem(at: outputURL) // Clean existing file if needed
+                    do {
+                        try data.write(to: outputURL)
+                        result?(outputURL.path)
+                    } catch {
+                        print(error.localizedDescription)
+                    }
+                } else {
+                    print("No image-data found in content.")
                 }
             case .failure(let error):
-                print(error.localizedDescription)
+                print("Capture failed: \(error.localizedDescription)")
             }
         }
     }
@@ -185,19 +191,9 @@ class CameraView: NSObject, FlutterPlatformView {
     private func mergeAndReturnFinalVideo(result: FlutterResult?) {
         AVMutableComposition().mergeVideo(self.videoURLArray) { url, error in
             self.videoURLArray.removeAll()
-//            channel?.invokeMethod("url_path", arguments: savePathUrl.path)
             result?(url?.path ?? "")
-
         }
-
-//@@@
-//        VideoGenerator.presetName = AVAssetExportPresetMediumQuality
-//        VideoGenerator.mergeMovies(videoURLs: self.videoURLArray) { result in
-//            self.videoURLArray.removeAll()
-//            channel?.invokeMethod("url_path", arguments: savePathUrl.path)
-//        }
     }
-
 
     // Unused helper (optional)
     private func videoQueue() -> DispatchQueue {
@@ -246,17 +242,6 @@ extension AVMutableComposition {
 
         let outputURL = documentDirectory.appendingPathComponent("finalvideo.mp4")
         try? FileManager.default.removeItem(at: outputURL) // Clean existing file if needed
-
-        // Skip merging if there's only one video
-//        if let singleURL = urls.first, urls.count == 1 {
-//            do {
-//                try FileManager.default.copyItem(at: singleURL, to: outputURL)
-//                completion(outputURL, nil)
-//            } catch {
-//                completion(nil, error)
-//            }
-//            return
-//        }
 
         let maxRenderSize = CGSize(width: 1280, height: 720)
         var renderSize = CGSize.zero
