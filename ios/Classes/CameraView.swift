@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import CameraManager
 import AVKit
 
 class CameraView: NSObject, FlutterPlatformView {
@@ -21,7 +20,6 @@ class CameraView: NSObject, FlutterPlatformView {
     init(frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?, binaryMessenger: FlutterBinaryMessenger?, channel: FlutterMethodChannel) {
         self._view = UIView(frame: CGRect(x: 0, y: 0, width: deviceWidth, height: deviceWidth * 1.77))
         super.init()
-        configureCameraManager()
         setupChannel(channel)
     }
 
@@ -30,7 +28,7 @@ class CameraView: NSObject, FlutterPlatformView {
     }
 
     deinit {
-        cameraManager.stopCaptureSession()
+        cameraManager.stopSession()
     }
 
     private func setupChannel(_ channel: FlutterMethodChannel) {
@@ -53,7 +51,7 @@ class CameraView: NSObject, FlutterPlatformView {
             case "stop":
                 self.stopRecording(isVideoCompleted: true, result: result)
             case "dispose":
-                self.cameraManager.stopCaptureSession()
+                self.cameraManager.stopSession()
                 result(true)
             case "capture_image":
                 self.captureImage(result: result)
@@ -66,71 +64,48 @@ class CameraView: NSObject, FlutterPlatformView {
 
     private func setupView() {
         _view.backgroundColor = .black
-        print(cameraManager.currentCameraStatus())
-        switch cameraManager.currentCameraStatus() {
-        case .notDetermined, .accessDenied:
-            askCameraAndMicrophonePermission()
-        case .ready:
-            addCameraPreview()
-        default:
-            break
-        }
-    }
 
-    private func configureCameraManager() {
-        cameraManager.imageAlbumName = "RetryTech"
-        cameraManager.writeFilesToPhoneLibrary = false
-        cameraManager.showAccessPermissionPopupAutomatically = false
-        cameraManager.shouldEnableTapToFocus = false
-        cameraManager.shouldEnablePinchToZoom = false
-        cameraManager.shouldEnableExposure = false
-        cameraManager.shouldUseLocationServices = false
-        cameraManager.shouldRespondToOrientationChanges = false
-        cameraManager.shouldFlipFrontCameraImage = false
-    }
-
-    private func askCameraAndMicrophonePermission() {
-        cameraManager.askUserForCameraPermission { [weak self] granted in
-            guard let self = self, granted else {
-                return
+        cameraManager.checkPermissions { status in
+            if status {
+                self.addCameraPreview()
             }
-            self.addCameraPreview()
         }
+
+
     }
+
 
     private func addCameraPreview() {
-        cameraManager.resumeCaptureSession()
-        cameraManager.addPreviewLayerToView(self._view, newCameraOutputMode: .videoWithMic)
+        cameraManager.startSession()
+        if let layer = cameraManager.previewLayer {
+            layer.frame = UIScreen.main.bounds
+            _view.layer.addSublayer(layer)
+        }
     }
 
     private func toggleCamera() {
-        cameraManager.cameraDevice = (cameraManager.cameraDevice == .front) ? .back : .front
+        cameraManager.switchCamera()
     }
 
     private func captureImage(result: FlutterResult? = nil){
-        cameraManager.cameraOutputMode = .stillImage
-        cameraManager.capturePictureWithCompletion { resultImage in
-            switch resultImage {
-            case .success(let content):
-                guard let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                    print("Directory not found")
-                    return
+
+        cameraManager.capturePhoto { image in
+            guard let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                print("Directory not found")
+                return
+            }
+            if let data = image?.jpegData(compressionQuality: 1) {
+                print("Captured")
+                let outputURL = documentDirectory.appendingPathComponent("captured.jpg")
+                try? FileManager.default.removeItem(at: outputURL) // Clean existing file if needed
+                do {
+                    try data.write(to: outputURL)
+                    result?(outputURL.path)
+                } catch {
+                    print(error.localizedDescription)
                 }
-                if let data = content.asData {
-                    print("Captured")
-                    let outputURL = documentDirectory.appendingPathComponent("captured.jpg")
-                    try? FileManager.default.removeItem(at: outputURL) // Clean existing file if needed
-                    do {
-                        try data.write(to: outputURL)
-                        result?(outputURL.path)
-                    } catch {
-                        print(error.localizedDescription)
-                    }
-                } else {
-                    print("No image-data found in content.")
-                }
-            case .failure(let error):
-                print("Capture failed: \(error.localizedDescription)")
+            } else {
+                print("No image-data found in content.")
             }
         }
     }
@@ -145,19 +120,12 @@ class CameraView: NSObject, FlutterPlatformView {
     }
 
     private func toggleTorch(on: Bool) {
-        guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
-        do {
-            try device.lockForConfiguration()
-            device.torchMode = on ? .on : .off
-            device.unlockForConfiguration()
-        } catch {
-            print("Torch error: \(error)")
-        }
+        cameraManager.setTorch(active: on)
     }
 
     private func startRecording() {
         isRecording = true
-        cameraManager.startRecordingVideo()
+        cameraManager.startRecording()
         if isBackCamera && isTouchOn {
             DispatchQueue.main.async {
                 self.toggleTorch(on: true)
@@ -171,7 +139,7 @@ class CameraView: NSObject, FlutterPlatformView {
             return
         }
 
-        cameraManager.stopVideoRecording { [weak self] videoURL, error in
+        cameraManager.stopRecording { [weak self] videoURL in
             guard let self = self else { return }
             self.isRecording = false
 
@@ -183,7 +151,7 @@ class CameraView: NSObject, FlutterPlatformView {
                     result?(nil)
                 }
             } else {
-                print("Stop error: \(error?.localizedDescription ?? "nil")")
+                print("Stop error: Video Record")
             }
         }
     }
@@ -325,6 +293,256 @@ extension AVMutableComposition {
         case (1, 0, 0, 1): return (.up, false)
         case (-1, 0, 0, -1): return (.down, false)
         default: return (.up, false)
+        }
+    }
+}
+
+//MARK: - CameraManager
+class CameraManager: NSObject, ObservableObject {
+    private let session = AVCaptureSession()
+    private var videoDeviceInput: AVCaptureDeviceInput?
+    private let photoOutput = AVCapturePhotoOutput()
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private let sessionQueue = DispatchQueue(label: "camera.session.queue")
+
+    @Published var previewLayer: AVCaptureVideoPreviewLayer?
+    @Published var isRecording = false
+
+    private var currentVideoURL: URL?
+    private var videoRecordingCompletion: ((URL?) -> Void)?
+    private var photoCaptureDelegate: AVCapturePhotoCaptureDelegate?
+
+    private(set) var currentCameraPosition: AVCaptureDevice.Position = .back
+    var isFlashOn: Bool = false
+
+
+    override init() {
+        super.init()
+        configureSession()
+    }
+
+    func checkPermissions(completion: @escaping (Bool) -> Void) {
+        // Check camera permission
+        let videoAuthStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        switch videoAuthStatus {
+        case .authorized:
+            // Camera permission already granted, now check for microphone permission
+            checkMicrophonePermission(completion: completion)
+        case .notDetermined:
+            // Request camera permission
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                if granted {
+                    self.checkMicrophonePermission(completion: completion)
+                } else {
+                    DispatchQueue.main.async {
+                        completion(false)
+                    }
+                }
+            }
+        default:
+            DispatchQueue.main.async {
+                completion(false)
+            }
+        }
+    }
+
+    func checkMicrophonePermission(completion: @escaping (Bool) -> Void) {
+        let microphoneAuthStatus = AVAudioSession.sharedInstance().recordPermission
+        switch microphoneAuthStatus {
+        case .granted:
+            completion(true)  // Microphone permission granted
+        case .denied:
+            completion(false)  // Microphone permission denied
+        case .undetermined:
+            // Request microphone permission
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    completion(granted)
+                }
+            }
+        @unknown default:
+            completion(false)
+        }
+    }
+
+
+    private func configureSession() {
+        session.beginConfiguration()
+        session.sessionPreset = .high
+
+        // Add video input
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+              let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+              session.canAddInput(videoInput) else {
+            print("Failed to add video input")
+            return
+        }
+        session.addInput(videoInput)
+        videoDeviceInput = videoInput
+
+        // Add audio input
+        if let audioDevice = AVCaptureDevice.default(for: .audio),
+           let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
+           session.canAddInput(audioInput) {
+            session.addInput(audioInput)
+        }
+
+        // Add outputs
+        if session.canAddOutput(photoOutput) {
+            session.addOutput(photoOutput)
+        }
+
+        if session.canAddOutput(movieOutput) {
+            session.addOutput(movieOutput)
+        }
+
+        session.commitConfiguration()
+        previewLayer = AVCaptureVideoPreviewLayer(session: session)
+        previewLayer?.videoGravity = .resizeAspectFill
+    }
+
+    func startSession() {
+        sessionQueue.async {
+            if !self.session.isRunning {
+                self.session.startRunning()
+            }
+        }
+    }
+
+    func stopSession() {
+        sessionQueue.async {
+            if self.session.isRunning {
+                self.session.stopRunning()
+            }
+        }
+    }
+
+    func switchCamera() {
+        session.beginConfiguration()
+
+        if let currentInput = videoDeviceInput {
+            session.removeInput(currentInput)
+        }
+
+        let newPosition: AVCaptureDevice.Position = (currentCameraPosition == .back) ? .front : .back
+        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: newPosition),
+           let newInput = try? AVCaptureDeviceInput(device: device) {
+
+            if session.canAddInput(newInput) {
+                session.addInput(newInput)
+                videoDeviceInput = newInput
+                currentCameraPosition = newPosition
+            }
+        }
+
+        session.commitConfiguration()
+
+        if currentCameraPosition == .front {
+            isFlashOn = false
+            setTorch(active: false)
+        }
+    }
+
+    func capturePhoto(completion: @escaping (UIImage?) -> Void) {
+        let settings = AVCapturePhotoSettings()
+
+        let delegate = PhotoCaptureDelegate { [weak self] image in
+            DispatchQueue.main.async {
+                completion(image)
+            }
+            self?.photoCaptureDelegate = nil
+        }
+
+        photoCaptureDelegate = delegate
+        photoOutput.capturePhoto(with: settings, delegate: delegate)
+    }
+
+    private var currentDevice: AVCaptureDevice? {
+        return videoDeviceInput?.device
+    }
+
+    func setTorch(active: Bool) {
+        guard currentCameraPosition == .back else {
+            print("Torch is not available on front camera.")
+            return
+        }
+
+        guard let device = currentDevice, device.hasTorch else { return }
+
+        do {
+            try device.lockForConfiguration()
+            device.torchMode = active ? .on : .off
+            device.unlockForConfiguration()
+        } catch {
+            print("Torch could not be used: \(error.localizedDescription)")
+        }
+    }
+
+
+
+    func startRecording() {
+        guard !movieOutput.isRecording else { return }
+
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = UUID().uuidString + ".mov"
+        let tempURL = tempDir.appendingPathComponent(fileName)
+
+        currentVideoURL = tempURL
+        movieOutput.startRecording(to: tempURL, recordingDelegate: self)
+        isRecording = true
+
+    }
+
+
+    func stopRecording(_ completion: @escaping (URL?) -> Void) {
+        guard movieOutput.isRecording else {
+            completion(nil)
+            return
+        }
+        videoRecordingCompletion = completion
+        movieOutput.stopRecording()
+        isRecording = false
+    }
+}
+
+// MARK: - AVCaptureFileOutputRecordingDelegate
+
+extension CameraManager: AVCaptureFileOutputRecordingDelegate {
+    func fileOutput(_ output: AVCaptureFileOutput,
+                    didFinishRecordingTo outputFileURL: URL,
+                    from connections: [AVCaptureConnection],
+                    error: Error?) {
+        if let error = error {
+            print("Recording error: \(error.localizedDescription)")
+            videoRecordingCompletion?(nil)
+        } else {
+            videoRecordingCompletion?(currentVideoURL)
+        }
+
+        videoRecordingCompletion = nil
+        currentVideoURL = nil
+    }
+}
+
+// MARK: - AVCapturePhotoCaptureDelegate Helper
+
+class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    private let completion: (UIImage?) -> Void
+
+    init(completion: @escaping (UIImage?) -> Void) {
+        self.completion = completion
+    }
+
+    func photoOutput(_ output: AVCapturePhotoOutput,
+                     didFinishProcessingPhoto photo: AVCapturePhoto,
+                     error: Error?) {
+        print(#function)
+        if let data = photo.fileDataRepresentation(),
+           let image = UIImage(data: data) {
+            completion(image)
+
+        } else {
+            completion(nil)
         }
     }
 }

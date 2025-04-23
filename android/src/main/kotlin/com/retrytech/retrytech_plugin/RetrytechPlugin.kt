@@ -1,18 +1,14 @@
 package com.retrytech.retrytech_plugin
 
-import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Bitmap.createBitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
-import android.graphics.Matrix
 import android.graphics.Paint
-import android.media.ExifInterface
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -20,11 +16,10 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
@@ -36,6 +31,7 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.TransformationRequest
 import androidx.media3.transformer.Transformer
 import com.retrytech.retrytech_plugin.filter.RgbFilter
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -48,17 +44,15 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import com.retrytech.retrytech_plugin.camera.NativeViewFactory
 
 
 /** RetrytechPlugin */
-open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
+class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     /// The MethodChannel that will the communication between Flutter and native Android
     ///
     /// This local reference serves to register the plugin with the Flutter Engine and unregister it
     /// when the Flutter Engine is detached from the Activity
     private lateinit var channel: MethodChannel
-    private lateinit var cameraChannel: MethodChannel
     var context: Activity? = null
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(
@@ -66,13 +60,6 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "retrytech_plugin"
         )
         channel.setMethodCallHandler(this)
-
-        cameraChannel = MethodChannel(flutterPluginBinding.binaryMessenger, "retrytech_camera")
-        cameraChannel.setMethodCallHandler(this)
-        flutterPluginBinding.platformViewRegistry.registerViewFactory(
-            "retrytech_camera_view",
-            NativeViewFactory(cameraChannel)
-        )
     }
 
     @UnstableApi
@@ -121,30 +108,6 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         context = binding.activity
-        binding.addActivityResultListener { requestCode, resultCode, data ->
-            Log.e(
-                "TAG", "onReattachedToActivityForConfigChanges: " + requestCode + "resultCode" + resultCode + "Data" + data
-            )
-
-            true
-        }
-        if (ContextCompat.checkSelfPermission(
-                context!!, Manifest.permission.CAMERA
-            ) != PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-                context!!, Manifest.permission.READ_EXTERNAL_STORAGE
-            ) != PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-                context!!, Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) != PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-                context!!, Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                context!!, arrayOf(
-                    Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO
-                ), 1000
-            )
-        }
-
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -268,6 +231,7 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val composition = Composition.Builder(listOf(sequence)).build()
 
             val transformer = Transformer.Builder(context!!)
+                .setPortraitEncodingEnabled(true)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         Log.d("addWatermark", "Transformation completed")
@@ -358,85 +322,57 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private fun applyFilterOnImage(arguments: Map<String, Any>, result: Result) {
         val inputFilePath = arguments["input_path"]?.toString()
         val outputFilePath = arguments["output_path"]?.toString()
-        val filterValues = arguments["filter_values"] as? ArrayList<Float>
-        val colorMatrix = if (!filterValues.isNullOrEmpty()) ColorMatrix(filterValues.toFloatArray()) else null
-
-        if (inputFilePath.isNullOrEmpty() || outputFilePath.isNullOrEmpty()) {
+        val filterValues = arguments["filter_values"] as ArrayList<Float>?
+        val colorMatrix = ColorMatrix(
+            filterValues?.toFloatArray()
+        )
+        if (inputFilePath.isNullOrEmpty() || outputFilePath.isNullOrEmpty() || filterValues.isNullOrEmpty()) {
             result.success(false)
             return
         }
-
-        val originalBitmap = BitmapFactory.decodeFile(inputFilePath) ?: run {
-            result.success(false)
-            return
-        }
-
-        // Read EXIF and rotate if needed
-        val rotatedBitmap = try {
-            val exif = ExifInterface(inputFilePath)
-            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-            val matrix = Matrix()
-            when (orientation) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-            }
-            Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
-        } catch (e: Exception) {
-            originalBitmap // fallback
-        }
-
+        val bitmap = BitmapFactory.decodeFile(inputFilePath)
         val paint = Paint().apply {
-            colorMatrix?.let {
-                colorFilter = ColorMatrixColorFilter(it)
-            }
+            colorFilter = ColorMatrixColorFilter(colorMatrix)
         }
-
-        val outputBitmap = Bitmap.createBitmap(rotatedBitmap.width, rotatedBitmap.height, rotatedBitmap.config!!)
-        val canvas = Canvas(outputBitmap)
-        canvas.drawBitmap(rotatedBitmap, 0f, 0f, paint)
-
-        try {
-            val file = File(outputFilePath)
-            file.parentFile?.mkdirs()
-            val out = FileOutputStream(file)
-            outputBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-            out.flush()
-            out.close()
-            result.success(true)
-        } catch (e: Exception) {
+        if (bitmap == null) {
             result.success(false)
+            return
         }
+        val output = bitmap.config?.let { createBitmap(bitmap.width, bitmap.height, it) }
+        val canvas = output?.let { Canvas(it) }
+        canvas?.drawBitmap(bitmap, 0f, 0f, paint)
+        val file = File(outputFilePath)
+        file.parentFile?.mkdirs()
+        val out = FileOutputStream(file)
+        output?.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        out.flush()
+        out.close()
+        result.success(true)
     }
 
 
     @UnstableApi
     private fun applyFilterAndAudioToVideo(arguments: Map<String, Any>, result: Result) {
-        val videoUri = arguments["input_path"]?.toString()?.toUri()
+        val videoUri = Uri.fromFile(File(arguments["input_path"].toString()))
+//        val videoUri = arguments["input_path"]?.toString()?.toUri()
         val audioUri = arguments["audio_path"]?.toString()?.toUri()
         val outputUri = arguments["output_path"]?.toString()?.toUri()
         val filterValues = arguments["filter_values"] as ArrayList<Float>?
         val shouldAddBothMusics = arguments["should_add_both_musics"] as Boolean
         val audioStartTimeInMs = arguments["audio_start_time_in_ms"] as Double?
-
-
         val videoItemBuilder = EditedMediaItem.Builder(MediaItem.fromUri(videoUri!!))
             .setRemoveAudio(!shouldAddBothMusics);
-
         if (filterValues != null && filterValues.isNotEmpty()) {
             val videoEffects = mutableListOf<Effect>()
-
             val rgbFilter = RgbFilter(filterValues.toFloatArray())
             videoEffects.add(rgbFilter)
             videoItemBuilder.setEffects(Effects(listOf(), videoEffects))
         }
         val videoItem = videoItemBuilder.build()
-
         val mediaItemSequences: ArrayList<EditedMediaItemSequence> = ArrayList()
         val videoSequence = EditedMediaItemSequence.Builder(listOf(videoItem))
             .build()
         mediaItemSequences.add(videoSequence)
-
         if (audioUri != null) {
             val videoDurationUs = getVideoDurationUs(videoUri)
             val clippedAudioMediaItem = MediaItem.Builder()
@@ -454,12 +390,10 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 .build()
             mediaItemSequences.add(audioSequence)
         }
-
-
         val composition = Composition.Builder(mediaItemSequences).build()
-
         val transformer = Transformer.Builder(context!!)
             .setMuxerFactory(DefaultMuxer.Factory())
+            .setPortraitEncodingEnabled(true)
             .addListener(object : Transformer.Listener {
                 override fun onError(
                     composition: Composition,
@@ -470,7 +404,6 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     Log.d("TAG", "onMethodCall: " + exportException.message)
                     super.onError(composition, exportResult, exportException)
                 }
-
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     super.onCompleted(composition, exportResult)
                     result.success(true)
@@ -478,11 +411,9 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 }
             })
             .build()
-
         transformer.start(composition, outputUri?.path!!)
-
-
     }
+
 
     @UnstableApi
     private fun getVideoDurationUs(videoUri: Uri): Long {
