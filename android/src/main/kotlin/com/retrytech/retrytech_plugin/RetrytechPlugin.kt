@@ -37,6 +37,7 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.retrytech.retrytech_plugin.camera.NativeViewFactory
 import com.retrytech.retrytech_plugin.filter.RgbFilter
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -48,7 +49,6 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import com.retrytech.retrytech_plugin.camera.NativeViewFactory
 
 
 /** RetrytechPlugin */
@@ -106,6 +106,11 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "applyFilterToImage" -> {
                 Log.d("TAG", "onMethodCall: ${call.arguments}")
                 applyFilterOnImage(call.arguments as Map<String, String>, result)
+            }
+
+            "hasAudio" -> {
+                Log.d("TAG", "onMethodCall: ${call.arguments}")
+                checkAudioTrack(call.arguments as Map<String, String>, result)
             }
 
 
@@ -485,5 +490,13 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         return durationMs
     }
 
-
+    private fun checkAudioTrack(arguments: Map<String, Any>, result: Result) {
+        val videoPath = arguments["input_path"]?.toString()?.toUri()
+        val retriever = MediaMetadataRetriever()
+        retriever.setDataSource(context, videoPath)
+        val hasAudioStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)
+        retriever.release()
+        Log.d("HashAudio", "checkAudioTrack: ")
+        return result.success("yes" == hasAudioStr)
+    }
 }

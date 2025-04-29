@@ -43,6 +43,9 @@ public class RetrytechPlugin: NSObject, FlutterPlugin {
         case "createVideoFromImage":
             handleCreateVideoFromImage(args: args, result: result)
 
+             case "hasAudio":
+                        hasAudio(args: args, result: result)
+
         case "getPlatformVersion":
             result("iOS " + UIDevice.current.systemVersion)
 
@@ -50,6 +53,17 @@ public class RetrytechPlugin: NSObject, FlutterPlugin {
             result(FlutterMethodNotImplemented)
         }
     }
+
+    private func hasAudio(args: [String: Any], result: @escaping FlutterResult) {
+            guard let videoInputString = args["input_path"] as? String else {
+                print("Missing parameters for merging audio and video.")
+                result(false)
+                return
+            }
+
+           let status = AVEditor.shared.hasAudioTrack(videoURL: URL(fileURLWithPath: videoInputString))
+            result(status)
+        }
 
     private func handleMergeAudioAndVideo(args: [String: Any], result: @escaping FlutterResult) {
         guard let videoInputString = args["input_path"] as? String,

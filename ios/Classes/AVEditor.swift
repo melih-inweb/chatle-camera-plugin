@@ -529,7 +529,13 @@ extension AVEditor {
 }
 
 
-
+extension AVEditor {
+     func hasAudioTrack(videoURL: URL) -> Bool {
+           let asset = AVAsset(url: videoURL)
+           let audioTracks = asset.tracks(withMediaType: .audio)
+           return !audioTracks.isEmpty
+       }
+}
 
 extension View {
     func snapshotComplition(color: Color = .white,complition: @escaping (UIImage)->()){
