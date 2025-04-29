@@ -83,6 +83,10 @@ class RetrytechPlugin {
       'video_total_duration_in_sec': videoTotalDurationInSec,
     });
   }
+
+  Future<bool?> hasAudio({required String inputPath }) {
+    return methodChannel.invokeMethod('hasAudio', {'input_path': inputPath});
+  }
 }
 
 extension RetrytechCameraPlugin on RetrytechPlugin {
