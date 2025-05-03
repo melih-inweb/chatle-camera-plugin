@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Bitmap.createBitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.ColorMatrix
@@ -25,6 +24,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
@@ -80,37 +80,32 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         when (call.method) {
 
             "shareToInstagram" -> {
-                Log.d("TAG", "onMethodCall: ${call.arguments}")
                 shareToInstagram(call.arguments.toString(), result)
             }
-//
-//            "mergeAudioAndVideo" -> {
-//                Log.d("TAG", "onMethodCall: ${call.arguments}")
-//                mergeAudio(call.arguments as Map<String, String>, result)
-//            }
+
             "applyFilterAndAudioToVideo" -> {
-                Log.d("TAG", "onMethodCall: ${call.arguments}")
                 applyFilterAndAudioToVideo(call.arguments as Map<String, String>, result)
             }
 
             "addWaterMarkInVideo" -> {
-                Log.d("TAG", "onMethodCall: ${call.arguments}")
                 addWatermarkToVideo(call.arguments as Map<String, String>, result)
             }
 
             "extractAudio" -> {
-                Log.d("TAG", "onMethodCall: ${call.arguments}")
                 extractAudio(call.arguments as Map<String, String>, result)
             }
 
             "applyFilterToImage" -> {
-                Log.d("TAG", "onMethodCall: ${call.arguments}")
                 applyFilterOnImage(call.arguments as Map<String, String>, result)
             }
 
             "hasAudio" -> {
-                Log.d("TAG", "onMethodCall: ${call.arguments}")
                 checkAudioTrack(call.arguments as Map<String, String>, result)
+            }
+
+            "createVideoFromImage" -> {
+                createVideoFromImage(call.arguments as Map<String, String>, result)
+
             }
 
 
@@ -128,7 +123,8 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         context = binding.activity
         binding.addActivityResultListener { requestCode, resultCode, data ->
             Log.e(
-                "TAG", "onReattachedToActivityForConfigChanges: " + requestCode + "resultCode" + resultCode + "Data" + data
+                "TAG",
+                "onReattachedToActivityForConfigChanges: " + requestCode + "resultCode" + resultCode + "Data" + data
             )
 
             true
@@ -145,7 +141,10 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         ) {
             ActivityCompat.requestPermissions(
                 context!!, arrayOf(
-                    Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.RECORD_AUDIO
                 ), 1000
             )
         }
@@ -159,6 +158,73 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     override fun onDetachedFromActivity() {
+    }
+
+    @UnstableApi
+    fun createVideoFromImage(arguments: Map<String, Any>, onComplete: Result) {
+        val inputPath = (arguments["input_path"] ?: "").toString().toUri()
+        val audioPath = (arguments["audio_path"] ?: "").toString().toUri()
+        val outputPath = (arguments["output_path"] ?: "").toString()
+        val filterValues = arguments["filter_values"] as? ArrayList<Float>
+        val audioStartTimeInMs = arguments["audio_start_time_in_ms"] as Double?
+        val videoTotalDurationInSec = arguments["video_total_duration_in_sec"] as Double?
+
+        Log.d("TAG", "createVideoFromImage: " + arguments)
+        val imageMediaItem = MediaItem.fromUri(inputPath)
+        val videoItemBuilder = EditedMediaItem.Builder(imageMediaItem)
+            .setDurationUs(1000000 * (videoTotalDurationInSec?.toLong() ?: 1))
+            .setFrameRate(60)
+        if (filterValues != null && filterValues.isNotEmpty()) {
+            val videoEffects = mutableListOf<Effect>()
+            val rgbFilter = RgbFilter(filterValues.toFloatArray())
+            videoEffects.add(rgbFilter)
+            videoItemBuilder.setEffects(Effects(listOf(), videoEffects))
+        }
+
+        val editedImage = videoItemBuilder.build()
+
+
+        val clippedAudioMediaItem = MediaItem.Builder()
+            .setUri(audioPath)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(audioStartTimeInMs?.toLong() ?: 0)
+                    .setEndPositionMs(
+                        (audioStartTimeInMs?.toLong() ?: 0) + ((videoTotalDurationInSec?.toLong()
+                            ?: 0) * 1000)
+                    )
+                    .build()
+            )
+            .build()
+        val audioItem = EditedMediaItem.Builder(clippedAudioMediaItem)
+            .build()
+//        val audioSequence = EditedMediaItemSequence.Builder(listOf(audioItem))
+//            .build()
+        val imageSequence = EditedMediaItemSequence.Builder(listOf(editedImage)).build()
+        val audioSequence = EditedMediaItemSequence.Builder(listOf(audioItem)).build()
+
+        val composition = Composition.Builder(listOf(imageSequence, audioSequence)).build()
+
+        val transformer = Transformer.Builder(context!!)
+            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setPortraitEncodingEnabled(true)
+            .addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, result: ExportResult) {
+                    onComplete.success(true)
+                }
+
+                override fun onError(
+                    composition: Composition,
+                    result: ExportResult,
+                    exception: ExportException
+                ) {
+                    Log.e("ImageToVideo", "Export error: ${exception.message}", exception)
+                    onComplete.success(true)
+                }
+            })
+            .build()
+
+        transformer.start(composition, outputPath)
     }
 
     fun shareToInstagram(url: String, result: Result) {
@@ -365,7 +431,8 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         val inputFilePath = arguments["input_path"]?.toString()
         val outputFilePath = arguments["output_path"]?.toString()
         val filterValues = arguments["filter_values"] as? ArrayList<Float>
-        val colorMatrix = if (!filterValues.isNullOrEmpty()) ColorMatrix(filterValues.toFloatArray()) else null
+        val colorMatrix =
+            if (!filterValues.isNullOrEmpty()) ColorMatrix(filterValues.toFloatArray()) else null
 
         if (inputFilePath.isNullOrEmpty() || outputFilePath.isNullOrEmpty()) {
             result.success(false)
@@ -380,14 +447,25 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         // Read EXIF and rotate if needed
         val rotatedBitmap = try {
             val exif = ExifInterface(inputFilePath)
-            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
             val matrix = Matrix()
             when (orientation) {
                 ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
                 ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
                 ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
             }
-            Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
+            Bitmap.createBitmap(
+                originalBitmap,
+                0,
+                0,
+                originalBitmap.width,
+                originalBitmap.height,
+                matrix,
+                true
+            )
         } catch (e: Exception) {
             originalBitmap // fallback
         }
@@ -398,7 +476,8 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             }
         }
 
-        val outputBitmap = Bitmap.createBitmap(rotatedBitmap.width, rotatedBitmap.height, rotatedBitmap.config!!)
+        val outputBitmap =
+            Bitmap.createBitmap(rotatedBitmap.width, rotatedBitmap.height, rotatedBitmap.config!!)
         val canvas = Canvas(outputBitmap)
         canvas.drawBitmap(rotatedBitmap, 0f, 0f, paint)
 
@@ -469,6 +548,7 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     Log.d("TAG", "onMethodCall: " + exportException.message)
                     super.onError(composition, exportResult, exportException)
                 }
+
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     super.onCompleted(composition, exportResult)
                     result.success(true)
