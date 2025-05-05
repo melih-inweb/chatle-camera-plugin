@@ -64,7 +64,7 @@ class CameraView: NSObject, FlutterPlatformView {
 
     private func setupView() {
         _view.backgroundColor = .black
-#if !TARGET_OS_SIMULATOR
+#if !targetEnvironment(simulator)
         cameraManager.checkPermissions { status in
             if status {
                 self.addCameraPreview()
