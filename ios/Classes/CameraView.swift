@@ -67,7 +67,9 @@ class CameraView: NSObject, FlutterPlatformView {
 #if !targetEnvironment(simulator)
         cameraManager.checkPermissions { status in
             if status {
-                self.addCameraPreview()
+                DispatchQueue.main.async {
+                    self.addCameraPreview()
+                }
             }
         }
 #endif
