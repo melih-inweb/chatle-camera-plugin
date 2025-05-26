@@ -254,29 +254,27 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val inputPath = arguments["input_path"]
             val thumbnailPath = arguments["thumbnail_path"]
             val outputPath = arguments["output_path"]
-            val username = arguments["username"]
 
             if (inputPath.isNullOrEmpty() || outputPath.isNullOrEmpty()) {
-                result.success(false)
                 Log.e("addWatermark", "Missing input or output path.")
+                result.success(false)
                 return
             }
 
             val inputUri = inputPath.toUri()
             val outputUri = outputPath.toUri()
-            val bitmap = if (!thumbnailPath.isNullOrEmpty()) {
-                BitmapFactory.decodeFile(thumbnailPath)
-            } else null
+
+            val bitmap = thumbnailPath?.takeIf { it.isNotEmpty() }?.let {
+                BitmapFactory.decodeFile(it)
+            }
 
             if (bitmap == null) {
-                result.success(false)
                 Log.e("addWatermark", "Failed to decode thumbnail bitmap.")
+                result.success(false)
                 return
             }
 
-            // Get video resolution
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(inputPath)
+            val retriever = MediaMetadataRetriever().apply { setDataSource(inputPath) }
             val videoWidth =
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
                     ?.toIntOrNull() ?: 0
@@ -286,59 +284,49 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             retriever.release()
 
             if (videoWidth == 0 || videoHeight == 0) {
-                result.success(false)
                 Log.e("addWatermark", "Could not retrieve video dimensions.")
+                result.success(false)
                 return
             }
 
             Log.d("addWatermark", "Video resolution: ${videoWidth}x${videoHeight}")
 
-            // Scale factors based on target width in pixels
-            // Use percentage-based scaling for consistency across all resolutions
-
-            val imageScaleFactor =
-                if (videoWidth > 1080) 1.5f else if (videoWidth > 480) 0.8f else .5f  // 10% of video width
-            val verticalAnchor = -0.8f   // Same Y for both overlays
+            val imageScaleFactor = when {
+                videoWidth > 1080 -> .3f
+                videoWidth > 480 -> .2f
+                else -> 0.5f
+            }
+            val y = when {
+                videoHeight > 1080 -> -.9f
+                videoHeight > 480 -> -.85f
+                else -> -0.5f
+            }
 
             val imageOverlay = BitmapOverlay.createStaticBitmapOverlay(
                 bitmap,
                 StaticOverlaySettings.Builder()
                     .setAlphaScale(1f)
                     .setScale(imageScaleFactor, imageScaleFactor)
-                    .setBackgroundFrameAnchor(0.8f, verticalAnchor)
+                    .setBackgroundFrameAnchor(0.75f, y) // Fixed Y anchor
                     .build()
             )
 
-//            val spannableUsername = SpannableString(username ?: "").apply {
-//                setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-//            }
-//
-//            val textOverlay = TextOverlay.createStaticTextOverlay(
-//                spannableUsername,
-//                StaticOverlaySettings.Builder()
-//                    .setAlphaScale(1f)
-//                    .setScale(textScaleFactor, textScaleFactor)
-//                    .setBackgroundFrameAnchor(0.1f + imageScaleFactor + 0.02f, verticalAnchor)
-//                    .build()
-//            )
-
-
             val effects = Effects(
-                listOf(),
-                listOf(
-                    OverlayEffect(listOf(imageOverlay)),
-//                    OverlayEffect(listOf(textOverlay))
-                )
+                emptyList(), // No video effects
+                listOf(OverlayEffect(listOf(imageOverlay)))
             )
 
             val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(inputUri))
                 .setEffects(effects)
                 .build()
 
-            val sequence = EditedMediaItemSequence.Builder(listOf(editedItem)).build()
-            val composition = Composition.Builder(listOf(sequence)).build()
+            val composition = Composition.Builder(
+                listOf(
+                    EditedMediaItemSequence.Builder(listOf(editedItem)).build()
+                )
+            ).build()
 
-            val transformer = Transformer.Builder(context!!)
+            Transformer.Builder(context!!)
                 .setPortraitEncodingEnabled(true)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -351,13 +339,17 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                         exportResult: ExportResult,
                         exportException: ExportException
                     ) {
-                        Log.e("addWatermark", "Transformation failed: ${exportException.message}")
+                        Log.e(
+                            "addWatermark",
+                            "Transformation failed: ${exportException.message}",
+                            exportException
+                        )
                         result.success(false)
                     }
                 })
                 .build()
+                .start(composition, outputUri.path!!)
 
-            transformer.start(composition, outputUri.path!!)
             Log.d("addWatermark", "Transformation started")
 
         } catch (e: Exception) {
@@ -365,6 +357,7 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             result.success(false)
         }
     }
+
 
     @UnstableApi
     private fun extractAudio(arguments: Map<String, String>, result: Result) {
