@@ -324,15 +324,15 @@ extension AVEditor {
                         audioMixParams: &audioMixParams
                     )
 
-                    if shouldAddBothMusic {
-                        try await addAudioTrack(
-                            from: videoAsset,
-                            to: mixComposition,
-                            at: .zero,
-                            duration: videoAsset.duration,
-                            audioMixParams: &audioMixParams
-                        )
-                    }
+//                    if shouldAddBothMusic {
+//                        try await addAudioTrack(
+//                            from: videoAsset,
+//                            to: mixComposition,
+//                            at: .zero,
+//                            duration: videoAsset.duration,
+//                            audioMixParams: &audioMixParams
+//                        )
+//                    }
                 } else {
                     try await addAudioTrack(
                         from: videoAsset,
@@ -355,11 +355,101 @@ extension AVEditor {
 
                 exporter?.exportAsynchronously {
                     if exporter?.status == .completed {
-                        completion(true)
+                        // ✅ Load the exported file to check rotation
+                        let exportedAsset = AVAsset(url: outputURL)
+
+                        Task {
+                            do {
+                                let tracks = try await exportedAsset.loadTracks(withMediaType: .video)
+                                guard let track = tracks.first else {
+                                    completion(true) // no video? treat as success
+                                    return
+                                }
+
+                                let sizeAfterExport = track.naturalSize.applying(track.preferredTransform).standardizedSize
+                                let expectedSize = videoTrack.naturalSize.applying(videoTrack.preferredTransform).standardizedSize
+
+                                // ⚠️ Check for mismatch (e.g., rotation issue)
+                                if sizeAfterExport != expectedSize {
+                                    print("⚠️ Rotation mismatch. Re-exporting with correction...")
+
+                                    let fixedOutputURL = outputURL.deletingLastPathComponent()
+                                        .appendingPathComponent("fixed_" + outputURL.lastPathComponent)
+
+                                    try? FileManager.default.removeItem(at: fixedOutputURL)
+
+                                    let mixComposition = AVMutableComposition()
+                                    let videoTrack = try await exportedAsset.loadTracks(withMediaType: .video).first!
+
+                                    let compTrack = mixComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+                                    try compTrack?.insertTimeRange(
+                                        CMTimeRange(start: .zero, duration: exportedAsset.duration),
+                                        of: videoTrack,
+                                        at: .zero
+                                    )
+
+                                    if let audioTrack = exportedAsset.tracks(withMediaType: .audio).first {
+                                        let audioCompTrack = mixComposition.addMutableTrack(
+                                            withMediaType: .audio,
+                                            preferredTrackID: kCMPersistentTrackID_Invalid
+                                        )
+                                        try? audioCompTrack?.insertTimeRange(
+                                            CMTimeRange(start: .zero, duration: exportedAsset.duration),
+                                            of: audioTrack,
+                                            at: .zero
+                                        )
+                                    }
+
+                                    // 🔄 Apply -90 degree rotation
+                                    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compTrack!)
+                                    // 🔁 Correct -90° rotation for Camera app video
+                                    let videoSize = videoTrack.naturalSize
+                                    let transform = CGAffineTransform(translationX: videoSize.height, y: 0)
+                                        .rotated(by: .pi / 2) // 90° clockwise
+
+                                    layerInstruction.setTransform(transform, at: .zero)
+
+                                    let instruction = AVMutableVideoCompositionInstruction()
+                                    instruction.timeRange = CMTimeRange(start: .zero, duration: exportedAsset.duration)
+                                    instruction.layerInstructions = [layerInstruction]
+
+                                    let videoComposition = AVMutableVideoComposition()
+                                    videoComposition.instructions = [instruction]
+                                    videoComposition.renderSize = CGSize(width: videoSize.height, height: videoSize.width)
+                                    videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+
+
+                                    let fixExporter = AVAssetExportSession(asset: mixComposition, presetName: AVAssetExportPresetHighestQuality)
+                                    fixExporter?.outputURL = fixedOutputURL
+                                    fixExporter?.outputFileType = .mp4
+                                    fixExporter?.videoComposition = videoComposition
+
+                                    fixExporter?.exportAsynchronously {
+                                        if fixExporter?.status == .completed {
+                                            // Optional: Replace original output with fixed one
+                                            try? FileManager.default.removeItem(at: outputURL)
+                                            try? FileManager.default.moveItem(at: fixedOutputURL, to: outputURL)
+
+                                            completion(true)
+                                        } else {
+                                            print("❌ Failed to fix rotation: \(fixExporter?.error?.localizedDescription ?? "")")
+                                            completion(false)
+                                        }
+                                    }
+                                } else {
+                                    // 👍 Everything is fine
+                                    completion(true)
+                                }
+                            } catch {
+                                print("❌ Post-export check failed: \(error)")
+                                completion(false)
+                            }
+                        }
                     } else {
                         completion(false)
                     }
                 }
+
             } catch {
                 print("❌ Error loading tracks: \(error.localizedDescription)")
                 completion(false)
