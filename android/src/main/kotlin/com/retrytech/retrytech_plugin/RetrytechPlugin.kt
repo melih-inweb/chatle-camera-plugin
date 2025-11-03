@@ -169,11 +169,12 @@ open class RetrytechPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         val audioStartTimeInMs = arguments["audio_start_time_in_ms"] as Double?
         val videoTotalDurationInSec = arguments["video_total_duration_in_sec"] as Double?
 
-        Log.d("TAG", "createVideoFromImage: " + arguments)
-        val imageMediaItem = MediaItem.fromUri(inputPath)
+        val imageMediaItem = MediaItem.Builder().setUri(inputPath)
+            .setImageDurationMs(10000 * (videoTotalDurationInSec?.toLong() ?: 1))
+            .build()
         val videoItemBuilder = EditedMediaItem.Builder(imageMediaItem)
             .setDurationUs(1000000 * (videoTotalDurationInSec?.toLong() ?: 1))
-            .setFrameRate(60)
+            .setFrameRate(30)
         if (filterValues != null && filterValues.isNotEmpty()) {
             val videoEffects = mutableListOf<Effect>()
             val rgbFilter = RgbFilter(filterValues.toFloatArray())
